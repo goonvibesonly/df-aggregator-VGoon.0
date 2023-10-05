@@ -36,6 +36,7 @@ from czml3.properties import Position, Polyline, PolylineMaterial, PolylineOutli
 from multiprocessing import Process, Queue
 from bottle import route, run, request, get, put, response, redirect, template, static_file
 from bottle.ext.websocket import GeventWebSocketServer, websocket
+from time import sleep
 
 from sys import version_info
 if (version_info.major != 3 or version_info.minor < 6):
@@ -56,6 +57,11 @@ heading_d = 20000
 max_age = 5000
 receivers = []
 
+# GOONV2.0 addition Start
+""""Create a list of equipment or 'systems' that are 
+going to be compatible. This will be added to the xml page hosted by our node"""
+compatible_devices = {}
+# GOONV2.0 addition End
 
 ###############################################
 # Stores settings realted to intersect capture
@@ -79,6 +85,9 @@ class math_settings:
 class receiver:
     def __init__(self, station_url):
         self.station_url = station_url
+        # GOONV2.0 addition Start
+        self.device_type = ""
+        # GOONV2.0 addition End
         self.isAuto = True
         self.isActive = True
         self.flipped = False
@@ -91,6 +100,14 @@ class receiver:
             xml_contents = etree.parse(self.station_url)
             xml_station_id = xml_contents.find('STATION_ID')
             self.station_id = xml_station_id.text
+            
+            # GOONV2.0 addition Start
+            xml_device_type = xml_contents.find('DEVICE_TYPE')
+            self.device_type = xml_device_type.text
+            print(f"Device Type: {self.device_type}")
+            sleep(1)
+            # GOONV2.0 addition End
+            
             xml_doa_time = xml_contents.find('TIME')
             self.doa_time = int(xml_doa_time.text)
             xml_freq = xml_contents.find('FREQUENCY')
@@ -137,6 +154,10 @@ class receiver:
                 f"Problem connecting to {self.station_url}, receiver deactivated. Reactivate in WebUI.")
             # raise IOError
 
+    # def wardragon_ops(self):
+    #     # wifi alerts? 
+        
+    
     # Returns receivers properties as a dict, useful for passing data to the WebUI
     def receiver_dict(self):
         return ({'station_id': self.station_id, 'station_url': self.station_url,
@@ -687,11 +708,11 @@ def write_rx_czml():
                 lob_packets.append(Packet(id=f"HEADING-{x.station_id}-{index}",
                                           polyline=Polyline(
                                               material=PolylineMaterial(
-                                                  polylineDash = PolylineDashMaterial(color=Color(
+                                                  polylineDash=PolylineDashMaterial(color=Color(
                                                       rgba=gray),
-                                                  gapColor=Color(
+                                                      gapColor=Color(
                                                       rgba=[0, 0, 0, 0])
-                                              )),
+                                                  )),
                                               clampToGround=True,
                                               width=2,
                                               positions=Position(cartographicDegrees=[
@@ -706,6 +727,10 @@ def write_rx_czml():
                 #     rx_icon = {"image":{"uri":"/static/flipped_car.svg"}, "rotation":math.radians(360 - x.heading + 90)}
                 # elif x.heading < 0 or x.heading > 180:
                 #     rx_icon = {"image":{"uri":"/static/car.svg"}, "rotation":math.radians(360 - x.heading - 90)}
+            # GVO start
+            if x.device_type == "WARDRAGON":
+                rx_icon = {"image": {"uri": "/static/dragon.svg"}}
+            #GVO end
             else:
                 rx_icon = {"image": {"uri": "/static/tower.svg"}}
             receiver_point_packets.append(Packet(id=f"{x.station_id}-{index}",
@@ -1103,7 +1128,8 @@ def run_receiver(receivers):
                                     to_table = [current_time, round(intersection[0], 5), round(intersection[1], 5),
                                                 1, intersection[2], in_aoi]
                                     command = '''INSERT INTO intersects
-                                    (time, latitude, longitude, num_parents, confidence, aoi_id)
+                                    (time, latitude, longitude,
+                                     num_parents, confidence, aoi_id)
                                     VALUES (?,?,?,?,?,?)'''
                                     DATABASE_EDIT_Q.put(
                                         (command, (to_table,), True))
@@ -1388,6 +1414,7 @@ if __name__ == '__main__':
 
     geofile = options.geofile
     rx_file = options.rx_file
+    print(f'rxfile: {rx_file}')
     database_name = options.database_name
     debugging = False if not options.debugging else True
     ms.receiving = options.disable
@@ -1403,6 +1430,7 @@ if __name__ == '__main__':
 
     web = threading.Thread(target=start_server,
                            args=(options.ipaddr, options.port))
+
     web.daemon = True
     web.start()
 
@@ -1412,7 +1440,7 @@ if __name__ == '__main__':
 
     try:
         ###############################################
-        # Reds receivers from the database first, then
+        # Reads receivers from the database first, then
         # loads receivers in from a user provided list.
         ###############################################
         read_rx_table()

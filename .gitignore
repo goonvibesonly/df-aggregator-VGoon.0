@@ -14,3 +14,5 @@ static/node_modules
 static/cesium-kml-czml-editor
 package-lock.json
 package.json
+dfagg_venv
+dfagg_venv/*
